@@ -1,6 +1,6 @@
 module github.com/guillermo/dbinfo
 
-go 1.24.0
+go 1.24
 
 require github.com/jackc/pgx/v5 v5.7.4
 
