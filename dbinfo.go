@@ -13,6 +13,17 @@ type DBInfo struct {
 	Tables []*Table
 }
 
+// Relationship represents a relationship between tables
+type Relationship struct {
+	Table      string   // The related table name
+	Schema     string   // The related table schema
+	ForeignKey string   // The name of the foreign key constraint
+	Columns    []string // Local columns in the relationship
+	References []string // Referenced columns in the relationship
+	OnUpdate   string   // ON UPDATE action
+	OnDelete   string   // ON DELETE action
+}
+
 // Table represents a database table
 type Table struct {
 	Name        string
@@ -20,6 +31,8 @@ type Table struct {
 	Columns     []*Column
 	Indexes     []*Index
 	ForeignKeys []*ForeignKey
+	HasMany     []*Relationship // Tables that reference this table
+	BelongsTo   []*Relationship // Tables this table references
 	Comment     string
 }
 
@@ -81,7 +94,61 @@ func GetDBInfo(dsn string) (*DBInfo, error) {
 	}
 	dbInfo.Tables = tables
 
+	// Build table relationships
+	buildRelationships(dbInfo.Tables)
+
 	return dbInfo, nil
+}
+
+// buildRelationships builds the HasMany and BelongsTo relationships between tables
+func buildRelationships(tables []*Table) {
+	// Create a map for faster table lookup by schema and name
+	tableMap := make(map[string]*Table)
+	for _, table := range tables {
+		key := table.Schema + "." + table.Name
+		tableMap[key] = table
+
+		// Initialize relationship slices as empty, not nil
+		if table.HasMany == nil {
+			table.HasMany = make([]*Relationship, 0)
+		}
+		if table.BelongsTo == nil {
+			table.BelongsTo = make([]*Relationship, 0)
+		}
+	}
+
+	// Process each table's foreign keys to build relationships
+	for _, table := range tables {
+		// Process each foreign key
+		for _, fk := range table.ForeignKeys {
+			// Create a BelongsTo relationship for this table
+			belongsTo := &Relationship{
+				Table:      fk.RefTableName,
+				Schema:     fk.RefTableSchema,
+				ForeignKey: fk.Name,
+				Columns:    fk.ColumnNames,
+				References: fk.RefColumnNames,
+				OnUpdate:   fk.OnUpdate,
+				OnDelete:   fk.OnDelete,
+			}
+			table.BelongsTo = append(table.BelongsTo, belongsTo)
+
+			// Add a HasMany relationship to the referenced table
+			refTableKey := fk.RefTableSchema + "." + fk.RefTableName
+			if refTable, ok := tableMap[refTableKey]; ok {
+				hasMany := &Relationship{
+					Table:      table.Name,
+					Schema:     table.Schema,
+					ForeignKey: fk.Name,
+					Columns:    fk.RefColumnNames,
+					References: fk.ColumnNames,
+					OnUpdate:   fk.OnUpdate,
+					OnDelete:   fk.OnDelete,
+				}
+				refTable.HasMany = append(refTable.HasMany, hasMany)
+			}
+		}
+	}
 }
 
 // getTables retrieves all tables from the database

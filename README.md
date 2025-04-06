@@ -78,6 +78,27 @@ func main() {
 					fk.Name, fk.ColumnNames, fk.RefTableSchema, fk.RefTableName, fk.RefColumnNames)
 			}
 		}
+
+		// Print relationships
+		if len(table.HasMany) > 0 {
+			fmt.Println("Has Many:")
+			for _, rel := range table.HasMany {
+				fmt.Printf("  - %s.%s (%s.%s -> %s.%s)\n",
+					rel.Schema, rel.Table,
+					table.Name, rel.Columns[0],
+					rel.Table, rel.References[0])
+			}
+		}
+
+		if len(table.BelongsTo) > 0 {
+			fmt.Println("Belongs To:")
+			for _, rel := range table.BelongsTo {
+				fmt.Printf("  - %s.%s (%s.%s -> %s.%s)\n",
+					rel.Schema, rel.Table,
+					table.Name, rel.Columns[0],
+					rel.Table, rel.References[0])
+			}
+		}
 	}
 }
 ```
@@ -101,9 +122,6 @@ dbinfo
 
 # Or pass connection string as argument
 dbinfo "postgres://username:password@localhost:5432/mydatabase"
-
-# Or pass connection string as argument
-dbinfo "postgres://username:password@localhost:5432/mydatabase"
 ```
 
 The command outputs a YAML representation of the database structure:
@@ -124,12 +142,24 @@ tables:
     isnullable: false
     comment: Category name
   # ... other columns, indexes, foreign keys ...
+  hasmany:
+  - table: products
+    schema: public
+    foreignkey: products_category_id_fkey
+    columns: [id]
+    references: [category_id]
+    onupdate: NO ACTION
+    ondelete: CASCADE
+  belongsto: []
 # ... other tables ...
 ```
 
 ### Important Notes
 
 - **PostgreSQL Only**: Currently only PostgreSQL databases are supported, using the pgx driver.
+- **Table Relationships**: The package automatically identifies relationships between tables:
+  - `HasMany`: Shows which tables reference this table (parent-to-child relationships)
+  - `BelongsTo`: Shows which tables this table references (child-to-parent relationships)
 
 ## Returned Structures
 
@@ -141,12 +171,24 @@ type DBInfo struct {
 	Tables []*Table
 }
 
+type Relationship struct {
+	Table           string   // The related table name
+	Schema          string   // The related table schema
+	ForeignKey      string   // The name of the foreign key constraint
+	Columns         []string // Local columns in the relationship
+	References      []string // Referenced columns in the relationship
+	OnUpdate        string   // ON UPDATE action
+	OnDelete        string   // ON DELETE action
+}
+
 type Table struct {
 	Name        string
 	Schema      string
 	Columns     []*Column
 	Indexes     []*Index
 	ForeignKeys []*ForeignKey
+	HasMany     []*Relationship // Tables that reference this table
+	BelongsTo   []*Relationship // Tables this table references
 	Comment     string
 }
 

@@ -3,6 +3,9 @@ package dbinfo
 import (
 	"os"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestGetDBInfo(t *testing.T) {
@@ -52,6 +55,9 @@ func TestGetDBInfo(t *testing.T) {
 
 	// Test indexes
 	testIndexes(t, tableMap)
+
+	// Test relationships
+	testRelationships(t, tableMap)
 }
 
 func testCategoriesTable(t *testing.T, tableMap map[string]*Table) {
@@ -346,4 +352,313 @@ func testIndexes(t *testing.T, tableMap map[string]*Table) {
 			}
 		}
 	})
+}
+
+func testRelationships(t *testing.T, tableMap map[string]*Table) {
+	t.Run("Table Relationships", func(t *testing.T) {
+		// Test HasMany relationships
+		t.Run("HasMany Relationships", func(t *testing.T) {
+			// Test categories HasMany products
+			categoriesTable, ok := tableMap["categories"]
+			if !ok {
+				t.Fatal("Categories table not found")
+			}
+
+			if len(categoriesTable.HasMany) == 0 {
+				t.Fatal("Expected categories to have HasMany relationships")
+			}
+
+			var foundProductsRel bool
+			for _, rel := range categoriesTable.HasMany {
+				if rel.Table == "products" {
+					foundProductsRel = true
+					if rel.ForeignKey == "" {
+						t.Error("Foreign key name is empty in HasMany relationship")
+					}
+					if len(rel.Columns) != 1 || rel.Columns[0] != "id" {
+						t.Errorf("Unexpected local columns in HasMany relationship: %v", rel.Columns)
+					}
+					if len(rel.References) != 1 || rel.References[0] != "category_id" {
+						t.Errorf("Unexpected reference columns in HasMany relationship: %v", rel.References)
+					}
+				}
+			}
+
+			if !foundProductsRel {
+				t.Error("Expected categories to have HasMany relationship with products")
+			}
+
+			// Test orders HasMany order_items
+			ordersTable, ok := tableMap["orders"]
+			if !ok {
+				t.Fatal("Orders table not found")
+			}
+
+			if len(ordersTable.HasMany) == 0 {
+				t.Fatal("Expected orders to have HasMany relationships")
+			}
+
+			var foundOrderItemsRel bool
+			for _, rel := range ordersTable.HasMany {
+				if rel.Table == "order_items" {
+					foundOrderItemsRel = true
+					if len(rel.Columns) != 1 || rel.Columns[0] != "id" {
+						t.Errorf("Unexpected local columns in HasMany relationship: %v", rel.Columns)
+					}
+					if len(rel.References) != 1 || rel.References[0] != "order_id" {
+						t.Errorf("Unexpected reference columns in HasMany relationship: %v", rel.References)
+					}
+				}
+			}
+
+			if !foundOrderItemsRel {
+				t.Error("Expected orders to have HasMany relationship with order_items")
+			}
+		})
+
+		// Test BelongsTo relationships
+		t.Run("BelongsTo Relationships", func(t *testing.T) {
+			// Test products BelongsTo categories
+			productsTable, ok := tableMap["products"]
+			if !ok {
+				t.Fatal("Products table not found")
+			}
+
+			if len(productsTable.BelongsTo) == 0 {
+				t.Fatal("Expected products to have BelongsTo relationships")
+			}
+
+			var foundCategoriesRel bool
+			for _, rel := range productsTable.BelongsTo {
+				if rel.Table == "categories" {
+					foundCategoriesRel = true
+					if rel.ForeignKey == "" {
+						t.Error("Foreign key name is empty in BelongsTo relationship")
+					}
+					if len(rel.Columns) != 1 || rel.Columns[0] != "category_id" {
+						t.Errorf("Unexpected local columns in BelongsTo relationship: %v", rel.Columns)
+					}
+					if len(rel.References) != 1 || rel.References[0] != "id" {
+						t.Errorf("Unexpected reference columns in BelongsTo relationship: %v", rel.References)
+					}
+				}
+			}
+
+			if !foundCategoriesRel {
+				t.Error("Expected products to have BelongsTo relationship with categories")
+			}
+
+			// Test order_items BelongsTo relationships
+			orderItemsTable, ok := tableMap["order_items"]
+			if !ok {
+				t.Fatal("Order_items table not found")
+			}
+
+			if len(orderItemsTable.BelongsTo) < 2 {
+				t.Fatalf("Expected order_items to have at least 2 BelongsTo relationships, got %d", len(orderItemsTable.BelongsTo))
+			}
+
+			var foundOrdersRel, foundProductsRel bool
+			for _, rel := range orderItemsTable.BelongsTo {
+				if rel.Table == "orders" {
+					foundOrdersRel = true
+					if len(rel.Columns) != 1 || rel.Columns[0] != "order_id" {
+						t.Errorf("Unexpected local columns in BelongsTo relationship: %v", rel.Columns)
+					}
+					if len(rel.References) != 1 || rel.References[0] != "id" {
+						t.Errorf("Unexpected reference columns in BelongsTo relationship: %v", rel.References)
+					}
+				}
+				if rel.Table == "products" {
+					foundProductsRel = true
+					if len(rel.Columns) != 1 || rel.Columns[0] != "product_id" {
+						t.Errorf("Unexpected local columns in BelongsTo relationship: %v", rel.Columns)
+					}
+					if len(rel.References) != 1 || rel.References[0] != "id" {
+						t.Errorf("Unexpected reference columns in BelongsTo relationship: %v", rel.References)
+					}
+				}
+			}
+
+			if !foundOrdersRel {
+				t.Error("Expected order_items to have BelongsTo relationship with orders")
+			}
+			if !foundProductsRel {
+				t.Error("Expected order_items to have BelongsTo relationship with products")
+			}
+		})
+	})
+}
+
+// TestGetDBInfoStructure uses go-cmp to compare the output structure with expected structure
+func TestGetDBInfoStructure(t *testing.T) {
+	// Get connection string from environment variable
+	dsn := os.Getenv("TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("Skipping test: TEST_POSTGRES_DSN environment variable not set")
+	}
+
+	// Get actual database info
+	actual, err := GetDBInfo(dsn)
+	if err != nil {
+		t.Fatalf("Failed to get database info: %v", err)
+	}
+
+	// Define expected structure (focusing on core relationships)
+	// Note: We define only a subset of the tables and relationships for comparison
+	expected := &DBInfo{
+		// Name not checked as it depends on the test database name
+		Tables: []*Table{
+			{
+				Name:   "categories",
+				Schema: "public",
+				HasMany: []*Relationship{
+					{
+						Table:      "products",
+						Schema:     "public",
+						Columns:    []string{"id"},
+						References: []string{"category_id"},
+						OnDelete:   "CASCADE",
+					},
+				},
+				BelongsTo: []*Relationship{},
+			},
+			{
+				Name:   "products",
+				Schema: "public",
+				HasMany: []*Relationship{
+					{
+						Table:      "order_items",
+						Schema:     "public",
+						Columns:    []string{"id"},
+						References: []string{"product_id"},
+						OnDelete:   "RESTRICT",
+					},
+				},
+				BelongsTo: []*Relationship{
+					{
+						Table:      "categories",
+						Schema:     "public",
+						Columns:    []string{"category_id"},
+						References: []string{"id"},
+						OnDelete:   "CASCADE",
+					},
+				},
+			},
+			{
+				Name:   "customers",
+				Schema: "public",
+				HasMany: []*Relationship{
+					{
+						Table:      "orders",
+						Schema:     "public",
+						Columns:    []string{"id"},
+						References: []string{"customer_id"},
+						OnDelete:   "NO ACTION",
+					},
+				},
+				BelongsTo: []*Relationship{},
+			},
+			{
+				Name:   "orders",
+				Schema: "public",
+				HasMany: []*Relationship{
+					{
+						Table:      "order_items",
+						Schema:     "public",
+						Columns:    []string{"id"},
+						References: []string{"order_id"},
+						OnDelete:   "CASCADE",
+					},
+				},
+				BelongsTo: []*Relationship{
+					{
+						Table:      "customers",
+						Schema:     "public",
+						Columns:    []string{"customer_id"},
+						References: []string{"id"},
+						OnDelete:   "NO ACTION",
+					},
+				},
+			},
+			{
+				Name:    "order_items",
+				Schema:  "public",
+				HasMany: []*Relationship{}, // Empty slice, not nil
+				BelongsTo: []*Relationship{
+					{
+						Table:      "orders",
+						Schema:     "public",
+						Columns:    []string{"order_id"},
+						References: []string{"id"},
+						OnDelete:   "CASCADE",
+					},
+					{
+						Table:      "products",
+						Schema:     "public",
+						Columns:    []string{"product_id"},
+						References: []string{"id"},
+						OnDelete:   "RESTRICT",
+					},
+				},
+			},
+		},
+	}
+
+	// Ensure all expected tables have initialized slices
+	for _, table := range expected.Tables {
+		if table.HasMany == nil {
+			table.HasMany = []*Relationship{}
+		}
+		if table.BelongsTo == nil {
+			table.BelongsTo = []*Relationship{}
+		}
+	}
+
+	// Ensure all actual tables have initialized slices (not nil)
+	for _, table := range actual.Tables {
+		if table.HasMany == nil {
+			table.HasMany = []*Relationship{}
+		}
+		if table.BelongsTo == nil {
+			table.BelongsTo = []*Relationship{}
+		}
+	}
+
+	// Options for comparison
+	opts := []cmp.Option{
+		// Ignore fields that can vary or aren't relevant for structure comparison
+		cmpopts.IgnoreFields(DBInfo{}, "Name"),
+		cmpopts.IgnoreFields(Table{}, "Columns", "Indexes", "ForeignKeys", "Comment"),
+		cmpopts.IgnoreFields(Relationship{}, "ForeignKey", "OnUpdate"),
+
+		// Only compare the tables we've defined in our expected structure
+		cmpopts.IgnoreSliceElements(func(t *Table) bool {
+			for _, expectedTable := range expected.Tables {
+				if t.Name == expectedTable.Name && t.Schema == expectedTable.Schema {
+					return false
+				}
+			}
+			return true
+		}),
+
+		// Sort slices for comparison
+		cmpopts.SortSlices(func(a, b *Table) bool {
+			return a.Name < b.Name
+		}),
+		cmpopts.SortSlices(func(a, b *Relationship) bool {
+			if a.Table != b.Table {
+				return a.Table < b.Table
+			}
+			if len(a.Columns) == 0 || len(b.Columns) == 0 {
+				return false
+			}
+			return a.Columns[0] < b.Columns[0]
+		}),
+	}
+
+	// Compare actual vs expected
+	if diff := cmp.Diff(expected, actual, opts...); diff != "" {
+		t.Errorf("Unexpected database structure (-expected +actual):\n%s", diff)
+	}
 }
