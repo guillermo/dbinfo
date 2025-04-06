@@ -1,4 +1,13 @@
-# DBInfo
+# DBInfo - Just give me the postgres schema
+
+[![GoDock](https://godoc.org/github.com/guillermo/dbinfo?status.svg)](https://pkg.go.dev/github.com/guillermo/dbinfo)
+[![Go Report Card](https://goreportcard.com/badge/github.com/guillermo/dbinfo)](https://goreportcard.com/report/github.com/guillermo/dbinfo)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Build Status](https://github.com/guillermo/dbinfo/actions/workflows/go.yml/badge.svg)](https://github.com/guillermo/dbinfo/actions/workflows/go.yml)
+
+![DBInfo Schema](dbinfo.png)
+
+
 
 A Go package and a command line command that analyzes PostgreSQL databases and returns the schema as Go structures or as a yaml.
 
