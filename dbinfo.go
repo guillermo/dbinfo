@@ -1,11 +1,32 @@
+// Package dbinfo provides functionality to analyze PostgreSQL database schemas
+// and extract information about tables, columns, indexes, foreign keys, and relationships.
 package dbinfo
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// DBQuerier is an interface that can be satisfied by both pgxpool.Pool and pgx.Conn
+type DBQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// FromString creates a new connection pool from a PostgreSQL connection string.
+// It accepts both URL format (postgresql://user:password@host:port/database)
+// and DSN format (host=localhost port=5432 dbname=mydb user=myuser password=mypass).
+// The caller is responsible for closing the pool when done.
+func FromString(ctx context.Context, connString string) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, connString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+	return pool, nil
+}
 
 // DBInfo represents the structure of a database
 type DBInfo struct {
@@ -66,19 +87,11 @@ type ForeignKey struct {
 }
 
 // GetDBInfo analyzes a PostgreSQL database and returns its structure
-func GetDBInfo(dsn string) (*DBInfo, error) {
-	ctx := context.Background()
-
-	// Connect to the database
-	dbpool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
-	}
-	defer dbpool.Close()
-
+// using a provided DBQuerier (e.g., *pgxpool.Pool or *pgx.Conn)
+func GetDBInfo(ctx context.Context, db DBQuerier) (*DBInfo, error) {
 	// Get database name
 	var dbName string
-	err = dbpool.QueryRow(ctx, "SELECT current_database()").Scan(&dbName)
+	err := db.QueryRow(ctx, "SELECT current_database()").Scan(&dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database name: %w", err)
 	}
@@ -88,7 +101,7 @@ func GetDBInfo(dsn string) (*DBInfo, error) {
 	}
 
 	// Get all tables
-	tables, err := getTables(ctx, dbpool)
+	tables, err := getTables(ctx, db)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +165,7 @@ func buildRelationships(tables []*Table) {
 }
 
 // getTables retrieves all tables from the database
-func getTables(ctx context.Context, db *pgxpool.Pool) ([]*Table, error) {
+func getTables(ctx context.Context, db DBQuerier) ([]*Table, error) {
 	// Query to get all tables in the database
 	query := `
 	SELECT t.table_schema, t.table_name, obj_description(pg_class.oid) as table_comment
@@ -215,7 +228,7 @@ func getTables(ctx context.Context, db *pgxpool.Pool) ([]*Table, error) {
 }
 
 // getColumns retrieves all columns for a given table
-func getColumns(ctx context.Context, db *pgxpool.Pool, schema, tableName string) ([]*Column, error) {
+func getColumns(ctx context.Context, db DBQuerier, schema, tableName string) ([]*Column, error) {
 	// Query to get columns
 	query := `
 	SELECT c.column_name, c.data_type,
@@ -283,7 +296,7 @@ func getColumns(ctx context.Context, db *pgxpool.Pool, schema, tableName string)
 }
 
 // getIndexes retrieves all indexes for a given table
-func getIndexes(ctx context.Context, db *pgxpool.Pool, schema, tableName string) ([]*Index, error) {
+func getIndexes(ctx context.Context, db DBQuerier, schema, tableName string) ([]*Index, error) {
 	// Query to get indexes
 	query := `
 	SELECT
@@ -345,7 +358,7 @@ func getIndexes(ctx context.Context, db *pgxpool.Pool, schema, tableName string)
 }
 
 // getForeignKeys retrieves all foreign keys for a given table
-func getForeignKeys(ctx context.Context, db *pgxpool.Pool, schema, tableName string) ([]*ForeignKey, error) {
+func getForeignKeys(ctx context.Context, db DBQuerier, schema, tableName string) ([]*ForeignKey, error) {
 	// Query to get foreign keys
 	query := `
 	SELECT

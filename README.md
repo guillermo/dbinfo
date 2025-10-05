@@ -19,6 +19,7 @@ A Go package and a command line command that analyzes PostgreSQL databases and r
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
@@ -26,11 +27,22 @@ import (
 )
 
 func main() {
-	// PostgreSQL connection string
-	dsn := "postgres://username:password@localhost:5432/mydatabase"
+	ctx := context.Background()
+
+	// PostgreSQL connection string - accepts both formats:
+	// URL format: "postgresql://user:password@host:port/database"
+	// DSN format: "host=localhost port=5432 dbname=mydb user=myuser password=mypass"
+	connString := "postgresql://username:password@localhost:5432/mydatabase"
+
+	// Create connection pool
+	pool, err := dbinfo.FromString(ctx, connString)
+	if err != nil {
+		log.Fatalf("Error connecting to database: %v", err)
+	}
+	defer pool.Close()
 
 	// Get database info
-	info, err := dbinfo.GetDBInfo(dsn)
+	info, err := dbinfo.GetDBInfo(ctx, pool)
 	if err != nil {
 		log.Fatalf("Error getting DB info: %v", err)
 	}
@@ -103,6 +115,38 @@ func main() {
 }
 ```
 
+#### Using Your Existing Connection Pool
+
+If you already have a pgx connection pool, you can use it directly:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/guillermo/dbinfo"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+func main() {
+	ctx := context.Background()
+
+	// Use your existing pgxpool.Pool or pgx.Conn
+	// Both implement the DBQuerier interface
+	var pool *pgxpool.Pool // your existing pool
+
+	info, err := dbinfo.GetDBInfo(ctx, pool)
+	if err != nil {
+		log.Fatalf("Error getting DB info: %v", err)
+	}
+
+	fmt.Printf("Database: %s\n", info.Name)
+}
+```
+
 ### As a command-line tool
 
 DBInfo also comes with a command-line tool that can dump database schema as YAML.
@@ -156,14 +200,41 @@ tables:
 
 ### Important Notes
 
-- **PostgreSQL Only**: Currently only PostgreSQL databases are supported, using the pgx driver.
+- **PostgreSQL Only**: Currently only PostgreSQL databases are supported, using the pgx v5 driver.
+- **Connection String Formats**: `FromString` accepts both:
+  - URL format: `postgresql://user:password@host:port/database`
+  - DSN format: `host=localhost port=5432 dbname=mydb user=myuser password=mypass`
+- **Interface-Based**: Uses a `DBQuerier` interface for better testability and flexibility
+  - Both `*pgxpool.Pool` and `*pgx.Conn` implement this interface
 - **Table Relationships**: The package automatically identifies relationships between tables:
   - `HasMany`: Shows which tables reference this table (parent-to-child relationships)
   - `BelongsTo`: Shows which tables this table references (child-to-parent relationships)
 
-## Returned Structures
+## API Reference
 
-The main structure returned by `GetDBInfo` is:
+### Main Functions
+
+```go
+// Create a connection pool from a connection string
+// Accepts both URL and DSN formats
+func FromString(ctx context.Context, connString string) (*pgxpool.Pool, error)
+
+// Get database schema information using a DBQuerier
+func GetDBInfo(ctx context.Context, db DBQuerier) (*DBInfo, error)
+```
+
+### DBQuerier Interface
+
+```go
+type DBQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+```
+
+Both `*pgxpool.Pool` and `*pgx.Conn` from pgx v5 implement this interface, allowing you to use either with `GetDBInfo`.
+
+### Returned Structures
 
 ```go
 type DBInfo struct {

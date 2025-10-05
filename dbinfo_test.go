@@ -1,6 +1,7 @@
 package dbinfo
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -15,8 +16,17 @@ func TestGetDBInfo(t *testing.T) {
 		t.Skip("Skipping test: TEST_POSTGRES_DSN environment variable not set")
 	}
 
+	ctx := context.Background()
+
+	// Create connection pool
+	pool, err := FromString(ctx, dsn)
+	if err != nil {
+		t.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer pool.Close()
+
 	// Get database info
-	dbInfo, err := GetDBInfo(dsn)
+	dbInfo, err := GetDBInfo(ctx, pool)
 	if err != nil {
 		t.Fatalf("Failed to get database info: %v", err)
 	}
@@ -498,8 +508,17 @@ func TestGetDBInfoStructure(t *testing.T) {
 		t.Skip("Skipping test: TEST_POSTGRES_DSN environment variable not set")
 	}
 
+	ctx := context.Background()
+
+	// Create connection pool
+	pool, err := FromString(ctx, dsn)
+	if err != nil {
+		t.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer pool.Close()
+
 	// Get actual database info
-	actual, err := GetDBInfo(dsn)
+	actual, err := GetDBInfo(ctx, pool)
 	if err != nil {
 		t.Fatalf("Failed to get database info: %v", err)
 	}

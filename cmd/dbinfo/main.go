@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -105,10 +106,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Get database schema information
-	info, err := dbinfo.GetDBInfo(dsn)
+	ctx := context.Background()
+
+	// Create connection pool
+	pool, err := dbinfo.FromString(ctx, dsn)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	// Get database schema information
+	info, err := dbinfo.GetDBInfo(ctx, pool)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting database info: %v\n", err)
 		os.Exit(1)
 	}
 
